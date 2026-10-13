@@ -14,6 +14,10 @@ npm run dev
 
 배포용 빌드는 `npm run build` → `dist/` (상대 경로라 아무 정적 호스팅에 올려도 동작).
 
+`main`에 push하면 GitHub Actions(`.github/workflows/deploy.yml`)가 빌드해서 GitHub Pages에 자동 배포한다.
+→ https://simul-dev.github.io/zummi-cakeshop/
+(저장소 Settings → Pages → Source가 **GitHub Actions**로 되어 있어야 한다.)
+
 ## 규칙
 
 - 시작할 때 테이블 4×5 칸 중 랜덤한 곳에 2~4조각짜리 접시가 몇 개 깔린다. **이후로 테이블에 저절로 생기는 접시는 없다.**
