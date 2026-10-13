@@ -16,7 +16,7 @@ let layout: Layout;
 function resize() {
   const W = window.innerWidth;
   const H = window.innerHeight;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const cs = getComputedStyle(safeProbe);
   layout = computeLayout(W, H, dpr, parseFloat(cs.paddingTop) || 0, parseFloat(cs.paddingBottom) || 0);
   canvas.width = Math.round(W * dpr);

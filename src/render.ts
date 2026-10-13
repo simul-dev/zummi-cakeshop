@@ -7,9 +7,10 @@ import { drawBeltArrows } from './scene';
 
 type Ctx = CanvasRenderingContext2D;
 
-function plateAt(ctx: Ctx, p: Plate, x: number, y: number, s: number, lift = 0) {
-  drawPlate(ctx, x, y, s, lift);
-  drawCake(ctx, x, y, s, p.slices, p.rot);
+/** crisp: 크게 키워 보이는 순간에도 픽셀이 깨지지 않게 캐시 이미지 대신 새로 그린다 */
+function plateAt(ctx: Ctx, p: Plate, x: number, y: number, s: number, lift = 0, crisp = false) {
+  drawPlate(ctx, x, y, s, lift, crisp);
+  drawCake(ctx, x, y, s, p.slices, p.rot, crisp);
 }
 
 function slotGlow(ctx: Ctx, L: Layout, i: number, alpha: number) {
@@ -105,7 +106,7 @@ export function renderFrame(ctx: Ctx, L: Layout, g: Game, bg: HTMLCanvasElement,
       ctx.fill();
     }
     ctx.globalAlpha = Math.max(0, a);
-    plateAt(ctx, e.plate, c.x, c.y + dy, Math.max(0.01, s));
+    plateAt(ctx, e.plate, c.x, c.y + dy, Math.max(0.01, s), 0, !e.sweep);
     ctx.globalAlpha = 1;
   }
 
@@ -147,7 +148,7 @@ export function renderFrame(ctx: Ctx, L: Layout, g: Game, bg: HTMLCanvasElement,
   // 들고 있는 접시
   if (d) {
     const p = g.conveyor[d.ci];
-    if (p) plateAt(ctx, p, d.x + d.gx, d.y + d.gy - d.liftCur, 1.06, Math.min(1, d.liftCur / 30));
+    if (p) plateAt(ctx, p, d.x + d.gx, d.y + d.gy - d.liftCur, 1.06, Math.min(1, d.liftCur / 30), true);
   }
 
   // 파티클

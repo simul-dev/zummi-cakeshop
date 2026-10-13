@@ -37,7 +37,12 @@ export interface Flyer {
   dur: number;
   done: () => void;
 }
-export interface Effect { kind: 'complete' | 'vanish'; plate: Plate; slot: number; t: number; dur: number; }
+export interface Effect {
+  kind: 'complete' | 'vanish';
+  plate: Plate; slot: number; t: number; dur: number;
+  /** 클리어 때 남은 케이크를 한꺼번에 치우는 연출 (여러 개라 캐시 이미지로 가볍게 그림) */
+  sweep?: boolean;
+}
 export interface Particle {
   x: number; y: number; vx: number; vy: number; t: number; life: number;
   color: string; size: number; rot: number; vr: number; shape: 0 | 1 | 2;
@@ -650,7 +655,7 @@ export class Game {
       const c = slotCenter(L, i);
       const color = FLAVORS[p.slices[0]?.f ?? 0].accent;
       this.after(k * 0.07, () => {
-        this.effects.push({ kind: 'complete', plate: p, slot: i, t: 0, dur: 0.5 });
+        this.effects.push({ kind: 'complete', plate: p, slot: i, t: 0, dur: 0.5, sweep: true });
         this.after(0.16, () => this.burst(c.x, c.y - 24, color, 10));
       });
       k++;

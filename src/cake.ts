@@ -43,42 +43,62 @@ function hash(x: number) {
 
 // ───────────────────────── 스프라이트 캐시 ─────────────────────────
 // 케이크는 그릴 게 많아서 조합(맛 배열)별로 한 번만 그려 두고 이미지로 찍는다.
+// 이미지는 화면 픽셀과 1:1일 때만 쓴다. 키우거나(드래그·완성 연출) 소수점 위치에 찍으면
+// 픽셀이 늘어나 흐릿하고 깨져 보이므로, 그때는 매번 새로 그린다.
 
 interface Box { l: number; r: number; u: number; d: number; }
 const CAKE_BOX: Box = { l: CAKE_R + 18, r: CAKE_R + 18, u: CAKE_R * TILT + CAKE_H + 48, d: CAKE_R * TILT + 16 };
 const PLATE_BOX: Box = { l: PLATE_R + 3, r: PLATE_R + 3, u: PLATE_R * TILT + 3, d: PLATE_R * TILT + 8 };
 
-const cache = new Map<string, HTMLCanvasElement>();
+/** ox, oy: 이미지 안에서 그리기 원점의 정수 픽셀 위치 */
+interface Sprite { c: HTMLCanvasElement; ox: number; oy: number; }
+
+const cache = new Map<string, Sprite>();
+/** 논리 단위 1당 화면(장치) 픽셀 수 = 메인 캔버스 변환 배율과 같아야 한다 */
 let ppu = 2;
 
 /** 논리 단위 1당 실제 픽셀 수. 바뀌면 캐시를 버린다. */
 export function setCakeResolution(pxPerUnit: number) {
-  if (Math.abs(pxPerUnit - ppu) < 1e-3) return;
+  if (Math.abs(pxPerUnit - ppu) < 1e-6) return;
   ppu = pxPerUnit;
   cache.clear();
 }
 
-function sprite(key: string, box: Box, paint: (g: Ctx) => void): HTMLCanvasElement {
-  let c = cache.get(key);
-  if (c) {
+function sprite(key: string, box: Box, paint: (g: Ctx) => void): Sprite {
+  let sp = cache.get(key);
+  if (sp) {
     cache.delete(key);
-    cache.set(key, c);
-    return c;
+    cache.set(key, sp);
+    return sp;
   }
-  c = document.createElement('canvas');
-  c.width = Math.ceil((box.l + box.r) * ppu);
-  c.height = Math.ceil((box.u + box.d) * ppu);
+  const ox = Math.ceil(box.l * ppu);
+  const oy = Math.ceil(box.u * ppu);
+  const c = document.createElement('canvas');
+  c.width = ox + Math.ceil(box.r * ppu);
+  c.height = oy + Math.ceil(box.d * ppu);
   const g = c.getContext('2d')!;
-  g.setTransform(ppu, 0, 0, ppu, box.l * ppu, box.u * ppu);
+  g.setTransform(ppu, 0, 0, ppu, ox, oy);
   paint(g);
-  cache.set(key, c);
+  sp = { c, ox, oy };
+  cache.set(key, sp);
   if (cache.size > 90) cache.delete(cache.keys().next().value!);
-  return c;
+  return sp;
 }
 
-function stamp(ctx: Ctx, c: HTMLCanvasElement, box: Box, x: number, y: number, s: number) {
-  ctx.drawImage(c, x - box.l * s, y - box.u * s, (box.l + box.r) * s, (box.u + box.d) * s);
+/** 원점을 장치 픽셀 격자에 맞춰 1:1로 복사한다 (리샘플링 없음). s<1로 줄일 때만 부드럽게 축소. */
+function stamp(ctx: Ctx, sp: Sprite, x: number, y: number, s: number) {
+  if (Math.abs(s - 1) < 1e-3) {
+    const dx = Math.round(x * ppu) - sp.ox;
+    const dy = Math.round(y * ppu) - sp.oy;
+    ctx.drawImage(sp.c, dx / ppu, dy / ppu, sp.c.width / ppu, sp.c.height / ppu);
+    return;
+  }
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sp.c, x - (sp.ox / ppu) * s, y - (sp.oy / ppu) * s, (sp.c.width / ppu) * s, (sp.c.height / ppu) * s);
 }
+
+/** 키워서 보여야 하고 선명해야 하는 순간(드래그, 완성 연출)이면 직접 그린다 */
+const mustRepaint = (s: number, crisp: boolean) => crisp && s > 1.001;
 
 // ───────────────────────── 접시 ─────────────────────────
 
@@ -127,13 +147,21 @@ function paintPlate(g: Ctx) {
   g.stroke();
 }
 
-export function drawPlate(ctx: Ctx, x: number, y: number, s: number, lift = 0) {
+export function drawPlate(ctx: Ctx, x: number, y: number, s: number, lift = 0, crisp = false) {
   const R = PLATE_R * s;
   ctx.fillStyle = `rgba(90,45,30,${0.2 - lift * 0.07})`;
   ctx.beginPath();
   ctx.ellipse(x + lift * 6 * s, y + 7 * s + lift * 26 * s, R * (1 - lift * 0.06), R * TILT * (1 - lift * 0.06), 0, 0, TAU);
   ctx.fill();
-  stamp(ctx, sprite('plate', PLATE_BOX, paintPlate), PLATE_BOX, x, y, s);
+  if (mustRepaint(s, crisp)) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    paintPlate(ctx);
+    ctx.restore();
+    return;
+  }
+  stamp(ctx, sprite('plate', PLATE_BOX, paintPlate), x, y, s);
 }
 
 // ───────────────────────── 토핑 ─────────────────────────
@@ -739,15 +767,15 @@ function paintSlices(g: Ctx, x: number, y: number, s: number, slices: Slice[]) {
 }
 
 /** 접시 위 케이크 */
-export function drawCake(ctx: Ctx, x: number, y: number, s: number, slices: Slice[], rot: number) {
+export function drawCake(ctx: Ctx, x: number, y: number, s: number, slices: Slice[], rot: number, crisp = false) {
   if (!slices.length) return;
-  if (!isSettled(slices, rot)) {
+  // 조각이 움직이는 중이거나 크게 키워 보여야 하면 매번 새로 그려서 선명하게
+  if (mustRepaint(s, crisp) || !isSettled(slices, rot)) {
     paintSlices(ctx, x, y, s, slices);
     return;
   }
   const key = slices.map((sl) => sl.f).join(',');
-  const c = sprite(key, CAKE_BOX, (g) => paintSlices(g, 0, 0, 1, slices));
-  stamp(ctx, c, CAKE_BOX, x, y, s);
+  stamp(ctx, sprite(key, CAKE_BOX, (g) => paintSlices(g, 0, 0, 1, slices)), x, y, s);
 }
 
 /** 접시 사이를 이동 중인 조각 하나: 중심 (cx,cy)에 꼭짓점을 두고 a0부터 60° */
