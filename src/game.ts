@@ -84,6 +84,13 @@ function distribute(n: number, flavors: number[]): number[] {
   return flavors.flatMap((f, i) => Array<number>(counts[i]).fill(f));
 }
 
+/** 두 칸이 변을 맞대고 있는지 (대각선은 아님) */
+function adjacent(a: number, b: number): boolean {
+  const dr = Math.abs(((a / COLS) | 0) - ((b / COLS) | 0));
+  const dc = Math.abs((a % COLS) - (b % COLS));
+  return dr + dc === 1;
+}
+
 function groupSlices(s: number[]): number[] {
   return unique(s).flatMap((f) => s.filter((x) => x === f));
 }
@@ -419,8 +426,9 @@ export class Game {
         const T = this.board[t]!;
         const have = countOf(T.slices, f);
         const free = MAX_SLICES - T.slices.length;
+        // 조각은 변을 맞댄(상하좌우) 접시끼리만 옮긴다. 대각선이나 한 칸 건너 접시에서 직접 가져오지 않는다.
         const others = group
-          .filter((g) => g !== t)
+          .filter((g) => g !== t && adjacent(g, t))
           .map((g) => ({ idx: g, have: countOf(this.board[g]!.slices, f) }))
           .sort((a, b) => a.have - b.have);
         const avail = others.reduce((a, o) => a + o.have, 0);
