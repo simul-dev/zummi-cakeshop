@@ -172,7 +172,7 @@ export class Game {
   }
 
   get def(): StageDef {
-    return STAGES[Math.min(this.stage, STAGES.length) - 1];
+    return STAGES[Math.min(Math.max(this.stage, 1), STAGES.length) - 1];
   }
 
   /** 처음부터 (1단계, 점수 0) */

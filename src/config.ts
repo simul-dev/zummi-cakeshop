@@ -32,11 +32,9 @@ export interface StageDef {
   help: number;
 }
 
-/** 단계는 5개. 단계마다 케이크 수·맛 종류·섞임 정도가 확 늘어난다. */
+/** 단계는 3개. 단계마다 케이크 수·맛 종류·섞임 정도가 확 늘고, 컨베이어 도움은 줄어든다. */
 export const STAGES: StageDef[] = [
-  { cakes: 6, flavors: 3, plates: 5, boardSlices: [2, 3], mix: 0.25, mixKinds: 2, sizes: [10, 40, 40, 10], kinds: [75, 25, 0], help: 1 },
-  { cakes: 9, flavors: 4, plates: 7, boardSlices: [2, 4], mix: 0.5, mixKinds: 2, sizes: [10, 35, 40, 15], kinds: [50, 40, 10], help: 0.85 },
-  { cakes: 12, flavors: 5, plates: 10, boardSlices: [2, 4], mix: 0.7, mixKinds: 2, sizes: [10, 30, 38, 22], kinds: [30, 45, 25], help: 0.65 },
-  { cakes: 16, flavors: 6, plates: 12, boardSlices: [2, 4], mix: 0.8, mixKinds: 3, sizes: [8, 27, 35, 30], kinds: [18, 45, 37], help: 0.5 },
-  { cakes: 20, flavors: 6, plates: 14, boardSlices: [3, 4], mix: 0.9, mixKinds: 3, sizes: [5, 25, 35, 35], kinds: [10, 40, 50], help: 0.4 },
+  { cakes: 12, flavors: 6, plates: 10, boardSlices: [2, 4], mix: 0.7, mixKinds: 2, sizes: [10, 30, 38, 22], kinds: [30, 45, 25], help: 0.65 },
+  { cakes: 16, flavors: 7, plates: 12, boardSlices: [2, 4], mix: 0.8, mixKinds: 3, sizes: [8, 27, 35, 30], kinds: [18, 45, 37], help: 0.5 },
+  { cakes: 20, flavors: 7, plates: 14, boardSlices: [3, 4], mix: 0.9, mixKinds: 3, sizes: [5, 25, 35, 35], kinds: [10, 40, 50], help: 0.4 },
 ];

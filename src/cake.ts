@@ -326,6 +326,58 @@ function chocoCurl(g: Ctx, x: number, y: number, w: number, rot: number) {
   g.restore();
 }
 
+/** 벚꽃 한 송이: 끝이 살짝 갈라진 꽃잎 5장 + 진분홍 꽃술. 윗면에 눕혀 있어서 세로로 눌러 그린다. */
+function blossom(g: Ctx, x: number, y: number, rad: number, rot: number) {
+  softShadow(g, x + rad * 0.1, y + rad * 0.35, rad * 1.05, rad * 0.5, 0.14);
+  g.save();
+  g.translate(x, y);
+  g.scale(1, 0.78);
+  for (let k = 0; k < 5; k++) {
+    g.save();
+    g.rotate(rot + (k * TAU) / 5);
+    const grad = g.createLinearGradient(0, 0, 0, -rad);
+    grad.addColorStop(0, '#ff8fb3');
+    grad.addColorStop(0.45, '#ffc6d9');
+    grad.addColorStop(1, '#fff0f5');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.bezierCurveTo(-rad * 0.62, -rad * 0.3, -rad * 0.48, -rad * 0.95, -rad * 0.14, -rad * 0.98);
+    g.lineTo(0, -rad * 0.84);
+    g.lineTo(rad * 0.14, -rad * 0.98);
+    g.bezierCurveTo(rad * 0.48, -rad * 0.95, rad * 0.62, -rad * 0.3, 0, 0);
+    g.fill();
+    g.strokeStyle = 'rgba(230,110,150,0.35)';
+    g.lineWidth = rad * 0.04;
+    g.beginPath();
+    g.moveTo(0, -rad * 0.15);
+    g.lineTo(0, -rad * 0.6);
+    g.stroke();
+    g.restore();
+  }
+  g.fillStyle = '#e8487a';
+  circle(g, 0, 0, rad * 0.2);
+  g.fill();
+  g.fillStyle = '#ffd86b';
+  for (let k = 0; k < 6; k++) {
+    const a = rot + (k * TAU) / 6 + 0.3;
+    circle(g, Math.cos(a) * rad * 0.3, Math.sin(a) * rad * 0.3, rad * 0.065);
+    g.fill();
+  }
+  g.restore();
+}
+
+/** 은색 아라잔 (작은 진주 장식) */
+function pearl(g: Ctx, x: number, y: number, rad: number) {
+  const grad = g.createRadialGradient(x - rad * 0.35, y - rad * 0.35, 0, x, y, rad);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.6, '#e6e1ea');
+  grad.addColorStop(1, '#b9b2c2');
+  g.fillStyle = grad;
+  circle(g, x, y, rad);
+  g.fill();
+}
+
 function redBean(g: Ctx, x: number, y: number, rad: number) {
   g.fillStyle = '#5e1f22';
   g.beginPath();
@@ -366,6 +418,16 @@ function topping(g: Ctx, st: FlavorStyle, P: (rho: number, th: number) => [numbe
       blueberry(g, ax, ay - r * 0.09, r * 0.115);
       blueberry(g, cx, cy - r * 0.09, r * 0.11);
       blueberry(g, bx, by - r * 0.08, r * 0.12);
+      break;
+    }
+    case 'sakura': {
+      for (const [rho, dt] of [[0.26, 0.42], [0.7, -0.22], [0.62, 0.3]] as const) {
+        const [px, py] = P(r * rho, m + dt);
+        pearl(g, px, py - r * 0.02, r * 0.035);
+      }
+      const [bx, by] = P(r * 0.66, m + 0.2);
+      blossom(g, bx, by - r * 0.03, r * 0.15, m * 2 + 0.6);
+      blossom(g, x, y - r * 0.04, r * 0.26, m * 3);
       break;
     }
     case 'cherry':
@@ -546,6 +608,19 @@ function drawSlice(
       g.lineWidth = r * 0.03;
       g.beginPath();
       g.ellipse(cx, cy - h * 0.95, r, ry, 0, s0, e0);
+      g.stroke();
+    }
+    if (st.ribbon) {
+      wallPath(g, cx, cy, r, h * 0.38, h * 0.56, s0, e0);
+      const rg = g.createLinearGradient(0, cy - h * 0.56, 0, cy - h * 0.38 + ry);
+      rg.addColorStop(0, st.ribbon[0]);
+      rg.addColorStop(1, st.ribbon[1]);
+      g.fillStyle = rg;
+      g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.55)';
+      g.lineWidth = r * 0.02;
+      g.beginPath();
+      g.ellipse(cx, cy - h * 0.53, r, ry, 0, s0, e0);
       g.stroke();
     }
     // 밑단 크림 테두리 (두 줄)

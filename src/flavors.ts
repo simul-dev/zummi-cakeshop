@@ -1,4 +1,4 @@
-export type Topping = 'strawberry' | 'matcha' | 'lemon' | 'blueberry' | 'orange' | 'cherry';
+export type Topping = 'strawberry' | 'matcha' | 'lemon' | 'blueberry' | 'orange' | 'cherry' | 'sakura';
 
 export interface FlavorStyle {
   name: string;
@@ -18,6 +18,8 @@ export interface FlavorStyle {
   dust: string | null;
   /** 윗면 윤기 0..1 */
   gloss: number;
+  /** 옆면을 두르는 리본 [색, 그늘] */
+  ribbon?: [string, string];
   topping: Topping;
   /** 완성 이펙트 색 */
   accent: string;
@@ -104,6 +106,21 @@ export const FLAVORS: FlavorStyle[] = [
     gloss: 0.6,
     topping: 'cherry',
     accent: '#c0703f',
+  },
+  {
+    // 아이보리 생크림 + 벚꽃. 단면은 연분홍 벚꽃 시트와 벚꽃 젤리
+    name: '벚꽃',
+    top: ['#fffdfb', '#f4e6e2'],
+    side: ['#fffaf6', '#ecd8d2'],
+    sponge: ['#ffdbe6', '#f2b8c9'],
+    cream: ['#fffefc', '#efdcd9'],
+    jam: ['#ff8fb7', '#ffc2d8'],
+    drip: null,
+    dust: null,
+    gloss: 0.3,
+    ribbon: ['#ffb6cf', '#f08bb0'],
+    topping: 'sakura',
+    accent: '#ff9ec7',
   },
 ];
 
