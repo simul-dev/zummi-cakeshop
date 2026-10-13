@@ -23,7 +23,7 @@ export interface Plate {
 }
 
 export interface Flyer { flavor: number; from: number; to: number; t: number; dur: number; done: () => void; }
-export interface Effect { kind: 'complete' | 'vanish' | 'swap'; plate: Plate; slot: number; t: number; dur: number; }
+export interface Effect { kind: 'complete' | 'vanish'; plate: Plate; slot: number; t: number; dur: number; }
 export interface Particle {
   x: number; y: number; vx: number; vy: number; t: number; life: number;
   color: string; size: number; rot: number; vr: number; shape: 0 | 1 | 2;
@@ -498,7 +498,6 @@ export class Game {
 
     if (!this.board.some(Boolean)) this.stageClear();
     else if (!this.board.includes(null)) this.fail();
-    else this.refreshConveyor();
   }
 
   private execMove(m: Move): Promise<void> {
@@ -665,33 +664,10 @@ export class Game {
     return out;
   }
 
-  /** 테이블에서 사라진 맛이 들어 있는 컨베이어 접시는 새 접시로 바꿔 준다 */
-  private refreshConveyor() {
-    const B = this.boardCounts();
-    for (let i = 0; i < CONVEYOR_SLOTS; i++) {
-      const p = this.conveyor[i];
-      if (!p || this.drag?.ci === i) continue;
-      if (p.slices.every((f) => B[f] > 0)) continue;
-      this.effects.push({ kind: 'swap', plate: p, slot: i, t: 0, dur: 0.25 });
-      this.conveyor[i] = null;
-      if (this.selected === i) this.selected = null;
-    }
-    this.fillConveyor();
-  }
-
-  /** 빈 칸을 왼쪽으로 당기고 오른쪽 빈 칸을 새 접시로 채운다 */
+  /** 비어 있는 오른쪽 칸만 새 접시로 채운다. 이미 나온 접시는 쓸 때까지 절대 바꾸지 않는다. */
   private fillConveyor() {
     const L = this.layout;
-    const dragged = this.drag ? this.conveyor[this.drag.ci] : null;
-    const selected = this.selected !== null ? this.conveyor[this.selected] : null;
-    const old = this.conveyor;
-    this.conveyor = Array<Plate | null>(CONVEYOR_SLOTS).fill(null);
-    let n = 0;
-    old.forEach((p, from) => {
-      if (!p) return;
-      p.ox += L.convX[from] - L.convX[n];
-      this.conveyor[n++] = p;
-    });
+    const n = this.conveyor.filter(Boolean).length;
     for (let i = n; i < CONVEYOR_SLOTS; i++) {
       const slices = this.makeConveyorSlices();
       if (!slices.length) break;
@@ -699,8 +675,5 @@ export class Game {
       np.ox = L.LW + 70 + (i - n) * 120 - L.convX[i];
       this.conveyor[i] = np;
     }
-    if (this.drag && dragged) this.drag.ci = this.conveyor.indexOf(dragged);
-    this.selected = selected ? this.conveyor.indexOf(selected) : null;
-    if (this.selected === -1) this.selected = null;
   }
 }

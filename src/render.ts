@@ -76,14 +76,6 @@ export function renderFrame(ctx: Ctx, L: Layout, g: Game, bg: HTMLCanvasElement,
   // 완성 / 빈 접시 사라짐
   for (const e of g.effects) {
     const t = Math.min(1, e.t / e.dur);
-    if (e.kind === 'swap') {
-      // 테이블에서 사라진 맛이라 컨베이어에서 빠지는 접시
-      const c = conveyorPos(L, e.slot);
-      ctx.globalAlpha = 1 - t;
-      plateAt(ctx, e.plate, c.x, c.y + 30 * easeOutCubic(t), Math.max(0.01, 1 - 0.6 * t));
-      ctx.globalAlpha = 1;
-      continue;
-    }
     const c = slotCenter(L, e.slot);
     if (e.kind === 'vanish') {
       ctx.globalAlpha = 1 - t;
