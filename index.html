@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#ff8fab" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="쩜미 케이크샵" />
+    <title>쩜미 케이크샵</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍰</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="safe" aria-hidden="true"></div>
+    <canvas id="game"></canvas>
+
+    <header id="hud">
+      <div class="pill">
+        <span class="lbl">남은 케이크</span>
+        <span id="left">0</span>
+      </div>
+      <div class="score">
+        <span class="lbl">점수</span>
+        <span id="score">0</span>
+      </div>
+      <button id="sound" class="round" type="button" aria-label="소리 켜기/끄기">🔊</button>
+    </header>
+
+    <div id="overlay" hidden>
+      <div class="card">
+        <div id="newBest" class="badge" hidden>최고 기록!</div>
+        <h1 id="endTitle">테이블이 꽉 찼어요!</h1>
+        <p id="endSub" class="sub"></p>
+        <div class="final">
+          <span>점수</span>
+          <strong id="finalScore">0</strong>
+        </div>
+        <div class="final small">
+          <span>최고</span>
+          <strong id="finalBest">0</strong>
+        </div>
+        <button id="next" type="button" hidden>다음 단계</button>
+        <button id="restart" type="button">다시 하기</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
