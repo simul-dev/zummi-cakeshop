@@ -1,18 +1,18 @@
 import { haptic, sfx } from './audio';
-import { targetRot } from './cake';
-import { CONFIG, CONVEYOR_SLOTS, COLS, MAX_SLICES, ROWS, SLOTS, stageParams } from './config';
+import { angleDiff, STEP, targetRot, type Slice } from './cake';
+import { CONFIG, CONVEYOR_SLOTS, COLS, MAX_SLICES, ROWS, SLOTS, STAGES, type StageDef } from './config';
 import { TAU } from './draw';
 import { FLAVORS } from './flavors';
 import { CELL_H, CELL_W, conveyorPos, slotCenter, type Layout } from './layout';
 
 export interface Plate {
   id: number;
-  /** 같은 맛끼리 붙어 있도록 정렬된 조각 목록 (최대 6) */
-  slices: number[];
+  /** 같은 맛끼리 붙어 있도록 정렬된 조각 목록 (최대 6). 각 조각은 자기 각도를 부드럽게 따라간다. */
+  slices: Slice[];
   /** 원래 자리에서 벗어난 렌더 오프셋. 매 프레임 0으로 수렴 → 미끄러지는 애니메이션 */
   ox: number;
   oy: number;
-  /** 렌더용 회전 (조각 수가 바뀌면 부드럽게 돌아감) */
+  /** 접시 회전 (조각 수가 바뀌면 빈 자리가 앞을 보도록 부드럽게 돌아감) */
   rot: number;
   /** 등장 팝 진행도 0..1 (음수면 대기) */
   pop: number;
@@ -22,7 +22,21 @@ export interface Plate {
   fresh: boolean;
 }
 
-export interface Flyer { flavor: number; from: number; to: number; t: number; dur: number; done: () => void; }
+/** 접시에서 접시로 직선으로 미끄러져 가는 조각 */
+export interface Flyer {
+  flavor: number;
+  from: number;
+  to: number;
+  /** 출발 지점(접시 중심)과 출발 각도 */
+  x0: number;
+  y0: number;
+  a0: number;
+  /** 도착 접시에 미리 끼워 둔 자리 (도착할 때까지 안 보임). 각도는 접시가 돌면 같이 바뀐다. */
+  slice: Slice;
+  t: number;
+  dur: number;
+  done: () => void;
+}
 export interface Effect { kind: 'complete' | 'vanish'; plate: Plate; slot: number; t: number; dur: number; }
 export interface Particle {
   x: number; y: number; vx: number; vy: number; t: number; life: number;
@@ -43,7 +57,7 @@ export interface Drag {
   moved: boolean;
   hover: number;
 }
-export type EndKind = 'clear' | 'fail';
+export type EndKind = 'clear' | 'allclear' | 'fail';
 
 interface Move { flavor: number; target: number; sources: { idx: number; count: number }[]; }
 interface Timer { t: number; fn: () => void; }
@@ -52,8 +66,11 @@ const rand = Math.random;
 const randInt = (a: number, b: number) => a + Math.floor(rand() * (b - a + 1));
 const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
-const countOf = (s: number[], f: number) => s.reduce((a, x) => a + (x === f ? 1 : 0), 0);
 const unique = (s: number[]) => [...new Set(s)];
+/** 접시의 맛 목록 */
+export const flavorsOf = (p: Plate) => p.slices.map((s) => s.f);
+const countOf = (p: Plate, f: number) => p.slices.reduce((a, s) => a + (s.f === f ? 1 : 0), 0);
+const has = (p: Plate, f: number) => p.slices.some((s) => s.f === f);
 
 function weighted(ws: number[]): number {
   let r = rand() * ws.reduce((a, b) => a + b, 0);
@@ -68,6 +85,13 @@ function weightedPick(items: number[], weight: (x: number) => number): number {
   return items[weighted(items.map(weight))];
 }
 
+/** n조각을 주어진 맛들에 최소 1개씩 나눠 담는다 */
+function distribute(n: number, flavors: number[]): number[] {
+  const counts = flavors.map(() => 1);
+  for (let i = flavors.length; i < n; i++) counts[Math.floor(rand() * flavors.length)]++;
+  return flavors.flatMap((f, i) => Array<number>(counts[i]).fill(f));
+}
+
 function shuffle<T>(a: T[]): T[] {
   const b = a.slice();
   for (let i = b.length - 1; i > 0; i--) {
@@ -77,13 +101,6 @@ function shuffle<T>(a: T[]): T[] {
   return b;
 }
 
-/** n조각을 주어진 맛들에 최소 1개씩 나눠 담는다 */
-function distribute(n: number, flavors: number[]): number[] {
-  const counts = flavors.map(() => 1);
-  for (let i = flavors.length; i < n; i++) counts[Math.floor(rand() * flavors.length)]++;
-  return flavors.flatMap((f, i) => Array<number>(counts[i]).fill(f));
-}
-
 /** 두 칸이 변을 맞대고 있는지 (대각선은 아님) */
 function adjacent(a: number, b: number): boolean {
   const dr = Math.abs(((a / COLS) | 0) - ((b / COLS) | 0));
@@ -91,24 +108,33 @@ function adjacent(a: number, b: number): boolean {
   return dr + dc === 1;
 }
 
-function groupSlices(s: number[]): number[] {
-  return unique(s).flatMap((f) => s.filter((x) => x === f));
-}
-
-function addSlice(s: number[], f: number) {
-  const i = s.lastIndexOf(f);
-  if (i < 0) s.push(f);
-  else s.splice(i + 1, 0, f);
-}
-
-function removeSlice(s: number[], f: number) {
-  const i = s.lastIndexOf(f);
-  if (i >= 0) s.splice(i, 1);
-}
-
 let plateId = 1;
-function makePlate(slices: number[]): Plate {
-  return { id: plateId++, slices: groupSlices(slices), ox: 0, oy: 0, rot: targetRot(slices.length), pop: 1, lift: 0, fresh: false };
+function makePlate(flavors: number[]): Plate {
+  const grouped = unique(flavors).flatMap((f) => flavors.filter((x) => x === f));
+  const rot = targetRot(grouped.length);
+  return {
+    id: plateId++,
+    slices: grouped.map((f, j) => ({ f, ang: rot + j * STEP, vis: true })),
+    ox: 0, oy: 0, rot, pop: 1, lift: 0, fresh: false,
+  };
+}
+
+/** 같은 맛 무리 끝에 조각을 끼운다 (아직 안 보이는 상태로). 뒤 조각들은 자리를 비켜 준다. */
+function insertSlice(p: Plate, f: number): Slice {
+  let j = -1;
+  for (let i = p.slices.length - 1; i >= 0; i--) if (p.slices[i].f === f) { j = i; break; }
+  const at = j < 0 ? p.slices.length : j + 1;
+  const s: Slice = { f, ang: p.rot + at * STEP, vis: false };
+  p.slices.splice(at, 0, s);
+  return s;
+}
+
+/** 같은 맛 무리의 마지막 조각을 뺀다. 남은 조각들은 빈틈을 메우러 움직인다. */
+function takeSlice(p: Plate, f: number): Slice | null {
+  for (let i = p.slices.length - 1; i >= 0; i--) {
+    if (p.slices[i].f === f) return p.slices.splice(i, 1)[0];
+  }
+  return null;
 }
 
 export class Game {
@@ -137,9 +163,16 @@ export class Game {
   /** reset 시 증가 → 진행 중이던 비동기 연쇄를 끊는다 */
   private gen = 0;
   private combo = 0;
+  /** 이 단계 목표 케이크 수 / 지금까지 완성한 수 */
+  private cakesTotal = 0;
+  private cakesDone = 0;
 
   constructor() {
     try { this.best = Number(localStorage.getItem('zummi.best')) || 0; } catch { /* 저장소 없음 */ }
+  }
+
+  get def(): StageDef {
+    return STAGES[Math.min(this.stage, STAGES.length) - 1];
   }
 
   /** 처음부터 (1단계, 점수 0) */
@@ -151,6 +184,7 @@ export class Game {
   }
 
   nextStage() {
+    if (this.stage >= STAGES.length) return;
     this.stage++;
     this.startStage();
   }
@@ -172,27 +206,28 @@ export class Game {
     this.combo = 0;
     this.over = false;
 
+    const def = this.def;
+    this.cakesTotal = def.cakes;
+    this.cakesDone = 0;
+
     // 시작할 때만 테이블 랜덤 슬롯에 접시를 깐다. 이후로는 절대 저절로 생기지 않는다.
-    const { plates, flavors } = stageParams(this.stage);
-    for (let k = 0; k < plates; k++) {
-      const i = this.spawnInitialPlate(flavors);
-      if (i >= 0) this.board[i]!.pop = -k * 0.1;
+    for (let k = 0; k < def.plates; k++) {
+      const i = this.spawnInitialPlate(def);
+      if (i >= 0) this.board[i]!.pop = -k * 0.08;
     }
     const L = this.layout;
     this.fillConveyor();
     this.conveyor.forEach((p, i) => { if (p) p.ox = L.LW + 80 + i * 120 - L.convX[i]; });
     if (this.dirty.length) this.after(1.0, () => void this.process());
-    this.popups.push({ text: `${this.stage}단계`, x: L.x0 + 225, y: L.table.y + L.table.h * 0.45, t: 0, dur: 1.4, size: 44, color: '#ffffff' });
+    const cy = L.table.y + L.table.h * 0.42;
+    this.popups.push({ text: `${this.stage}단계`, x: L.x0 + 225, y: cy, t: 0, dur: 1.5, size: 48, color: '#ffffff' });
+    this.popups.push({ text: `케이크 ${def.cakes}개 · ${def.flavors}종`, x: L.x0 + 225, y: cy + 46, t: 0, dur: 1.5, size: 22, color: '#ffe066' });
     this.onScore?.(this.score, 0);
   }
 
-  /** 테이블에 남은 조각으로 만들어야 할 케이크 수 */
+  /** 이 단계에서 아직 완성하지 못한 케이크 수 */
   remainingCakes(): number {
-    const counts = new Map<number, number>();
-    for (const p of this.board) if (p) for (const f of p.slices) counts.set(f, (counts.get(f) ?? 0) + 1);
-    let n = 0;
-    for (const c of counts.values()) n += Math.ceil(c / MAX_SLICES);
-    return n;
+    return this.cakesTotal - this.cakesDone;
   }
 
   // ───────────────────────── 시간/타이머 ─────────────────────────
@@ -238,7 +273,7 @@ export class Game {
 
     const kBoard = 1 - Math.exp(-dt * 20);
     const kBelt = 1 - Math.exp(-dt * 9);
-    const kRot = 1 - Math.exp(-dt * 14);
+    const kRot = 1 - Math.exp(-dt * 12);
     const kFast = 1 - Math.exp(-dt * 18);
     for (const p of this.board) if (p) this.settle(p, kBoard, kRot, dt);
     this.conveyor.forEach((p, i) => {
@@ -263,9 +298,16 @@ export class Game {
     p.oy -= p.oy * k;
     if (Math.abs(p.ox) < 0.05) p.ox = 0;
     if (Math.abs(p.oy) < 0.05) p.oy = 0;
-    let dr = targetRot(p.slices.length) - p.rot;
-    dr = (((dr + Math.PI) % TAU) + TAU) % TAU - Math.PI;
-    p.rot = Math.abs(dr) < 0.01 ? targetRot(p.slices.length) : p.rot + dr * kRot;
+    const tr = targetRot(p.slices.length);
+    const dr = angleDiff(tr, p.rot);
+    p.rot = Math.abs(dr) < 0.002 ? tr : p.rot + dr * kRot;
+    // 조각마다 제자리(회전 + 순서)로 부드럽게. 아직 도착 안 한 조각은 자리를 정확히 잡고 기다린다.
+    p.slices.forEach((s, j) => {
+      const target = p.rot + j * STEP;
+      if (!s.vis) { s.ang = target; return; }
+      const da = angleDiff(target, s.ang);
+      s.ang = Math.abs(da) < 0.002 ? target : s.ang + da * kRot;
+    });
     if (p.pop < 1) p.pop = Math.min(1, p.pop + dt / 0.4);
   }
 
@@ -278,7 +320,7 @@ export class Game {
       const c = conveyorPos(this.layout, i);
       const px = c.x + p.ox;
       const py = c.y + p.oy - p.lift * 16;
-      if (Math.abs(x - px) < 68 && y > py - 82 && y < py + 52) return i;
+      if (Math.abs(x - px) < 68 && y > py - 86 && y < py + 52) return i;
     }
     return -1;
   }
@@ -419,17 +461,17 @@ export class Game {
     if (!p) return null;
     let best: Move | null = null;
     let bestScore = -Infinity;
-    for (const f of unique(p.slices)) {
-      const group = [idx, ...this.neighbors(idx).filter((n) => this.board[n]!.slices.includes(f))];
+    for (const f of unique(flavorsOf(p))) {
+      const group = [idx, ...this.neighbors(idx).filter((n) => has(this.board[n]!, f))];
       if (group.length < 2) continue;
       for (const t of group) {
         const T = this.board[t]!;
-        const have = countOf(T.slices, f);
+        const have = countOf(T, f);
         const free = MAX_SLICES - T.slices.length;
         // 조각은 변을 맞댄(상하좌우) 접시끼리만 옮긴다. 대각선이나 한 칸 건너 접시에서 직접 가져오지 않는다.
         const others = group
           .filter((g) => g !== t && adjacent(g, t))
-          .map((g) => ({ idx: g, have: countOf(this.board[g]!.slices, f) }))
+          .map((g) => ({ idx: g, have: countOf(this.board[g]!, f) }))
           .sort((a, b) => a.have - b.have);
         const avail = others.reduce((a, o) => a + o.have, 0);
         const gain = Math.min(free, avail);
@@ -447,7 +489,7 @@ export class Game {
           need -= c;
         }
         if (delta <= 0) continue;
-        const otherKinds = unique(T.slices).filter((x) => x !== f).length;
+        const otherKinds = unique(flavorsOf(T)).filter((x) => x !== f).length;
         const score = (have + gain) * 100 + (T.fresh ? 0 : 50) - otherKinds * 10;
         if (score > bestScore) {
           bestScore = score;
@@ -483,7 +525,7 @@ export class Game {
         if (!p.slices.length) {
           this.board[i] = null;
           this.effects.push({ kind: 'vanish', plate: p, slot: i, t: 0, dur: 0.22 });
-        } else if (p.slices.length === MAX_SLICES && p.slices.every((f) => f === p.slices[0])) {
+        } else if (p.slices.length === MAX_SLICES && p.slices.every((s) => s.f === p.slices[0].f)) {
           this.complete(i);
           completed = true;
         }
@@ -496,7 +538,8 @@ export class Game {
     this.processing = false;
     for (const p of this.board) if (p) p.fresh = false;
 
-    if (!this.board.some(Boolean)) this.stageClear();
+    // 목표 케이크를 다 만들면 클리어 (남은 케이크는 축하하며 전부 치운다). 테이블이 꽉 차면 실패.
+    if (this.cakesDone >= this.cakesTotal) this.stageClear();
     else if (!this.board.includes(null)) this.fail();
   }
 
@@ -505,24 +548,36 @@ export class Game {
     let k = 0;
     for (const s of m.sources) {
       for (let i = 0; i < s.count; i++) {
-        jobs.push(this.flySlice(s.idx, m.target, m.flavor, k * 0.075, k));
+        jobs.push(this.slideSlice(s.idx, m.target, m.flavor, k * 0.09, k));
         k++;
       }
     }
     return Promise.all(jobs).then(() => undefined);
   }
 
-  private flySlice(from: number, to: number, f: number, delay: number, k: number): Promise<void> {
+  /**
+   * 조각 하나를 from 접시에서 to 접시로 직선으로 옮긴다.
+   * 출발할 때 도착 접시에 자리를 미리 끼워 두므로, 가는 동안 도착 접시의 조각들이 비켜서고
+   * 접시가 돌아도 조각은 정확히 그 자리에 가서 멈춘다.
+   */
+  private slideSlice(from: number, to: number, f: number, delay: number, k: number): Promise<void> {
     return new Promise((resolve) => {
       this.after(delay, () => {
         const src = this.board[from];
-        if (src) removeSlice(src.slices, f);
-        sfx.slice(k);
+        const dst = this.board[to];
+        if (!src || !dst) { resolve(); return; }
+        const taken = takeSlice(src, f);
+        if (!taken) { resolve(); return; }
+        const seat = insertSlice(dst, f);
+        const c = slotCenter(this.layout, from);
+        sfx.slide(k);
         this.flyers.push({
-          flavor: f, from, to, t: 0, dur: 0.24,
+          flavor: f, from, to,
+          x0: c.x + src.ox, y0: c.y + src.oy, a0: taken.ang,
+          slice: seat, t: 0, dur: 0.32,
           done: () => {
-            const dst = this.board[to];
-            if (dst) addSlice(dst.slices, f);
+            seat.vis = true;
+            sfx.settle();
             resolve();
           },
         });
@@ -534,10 +589,11 @@ export class Game {
     const p = this.board[i]!;
     this.board[i] = null;
     this.combo++;
+    this.cakesDone++;
     const gained = CONFIG.pointsPerCake * this.combo;
     this.effects.push({ kind: 'complete', plate: p, slot: i, t: 0, dur: 0.55 });
     const c = slotCenter(this.layout, i);
-    const color = FLAVORS[p.slices[0]].accent;
+    const color = FLAVORS[p.slices[0].f].accent;
     this.after(0.18, () => this.burst(c.x, c.y - 24, color, 28));
     const px = Math.min(Math.max(c.x, this.layout.x0 + 70), this.layout.x0 + 380);
     this.popups.push({ text: `+${gained}`, x: px, y: c.y - 44, t: 0, dur: 1.0, size: 32, color: '#ffffff' });
@@ -584,15 +640,30 @@ export class Game {
     this.drag = null;
     this.selected = null;
     const L = this.layout;
-    this.addScore(CONFIG.clearBonus);
-    this.popups.push({ text: '클리어!', x: L.x0 + 225, y: L.table.y + L.table.h * 0.42, t: 0, dur: 1.6, size: 56, color: '#ffe066' });
-    this.popups.push({ text: `보너스 +${CONFIG.clearBonus}`, x: L.x0 + 225, y: L.table.y + L.table.h * 0.42 + 56, t: 0, dur: 1.6, size: 26, color: '#ffffff' });
-    for (let k = 0; k < 5; k++) {
+    const bonus = CONFIG.clearBonus * this.stage;
+    const last = this.stage >= STAGES.length;
+    // 테이블에 남은 케이크도 하나씩 톡톡 터지며 치워진다
+    let k = 0;
+    this.board.forEach((p, i) => {
+      if (!p) return;
+      this.board[i] = null;
+      const c = slotCenter(L, i);
+      const color = FLAVORS[p.slices[0]?.f ?? 0].accent;
+      this.after(k * 0.07, () => {
+        this.effects.push({ kind: 'complete', plate: p, slot: i, t: 0, dur: 0.5 });
+        this.after(0.16, () => this.burst(c.x, c.y - 24, color, 10));
+      });
+      k++;
+    });
+    this.addScore(bonus);
+    this.popups.push({ text: last ? '모든 단계 클리어!' : '클리어!', x: L.x0 + 225, y: L.table.y + L.table.h * 0.42, t: 0, dur: 1.8, size: last ? 42 : 56, color: '#ffe066' });
+    this.popups.push({ text: `보너스 +${bonus}`, x: L.x0 + 225, y: L.table.y + L.table.h * 0.42 + 56, t: 0, dur: 1.8, size: 26, color: '#ffffff' });
+    for (let k = 0; k < (last ? 9 : 5); k++) {
       this.after(k * 0.12, () => this.burst(L.x0 + 60 + rand() * 330, L.table.y + 80 + rand() * (L.table.h - 160), pick(FLAVORS).accent, 22));
     }
     sfx.clear();
     haptic(60);
-    this.after(1.3, () => this.onEnd?.('clear', this.score > this.bestAtStart));
+    this.after(last ? 1.8 : 1.3, () => this.onEnd?.(last ? 'allclear' : 'clear', this.score > this.bestAtStart));
   }
 
   private fail() {
@@ -608,52 +679,67 @@ export class Game {
 
   private boardCounts(): number[] {
     const c = FLAVORS.map(() => 0);
-    for (const p of this.board) if (p) for (const f of p.slices) c[f]++;
+    for (const p of this.board) if (p) for (const s of p.slices) c[s.f]++;
     return c;
   }
 
-  /** 시작 접시: 테이블 빈칸 중 랜덤한 곳에 2~4조각 */
-  private spawnInitialPlate(flavorCount: number): number {
+  /** 시작 접시: 테이블 빈칸 중 랜덤한 곳에. 아직 테이블에 없는 맛을 먼저 써서 모든 맛이 한 번씩은 깔리게 한다. */
+  private spawnInitialPlate(def: StageDef): number {
     const empties = range(SLOTS).filter((i) => !this.board[i]);
     if (!empties.length) return -1;
     const idx = pick(empties);
     // 이웃과 같은 맛을 피해서 시작하자마자 합쳐지지 않게
     const avoid = new Set<number>();
-    for (const n of this.neighbors(idx)) for (const f of this.board[n]!.slices) avoid.add(f);
-    const active = range(flavorCount);
+    for (const n of this.neighbors(idx)) for (const s of this.board[n]!.slices) avoid.add(s.f);
+    const B = this.boardCounts();
+    const active = range(def.flavors);
     let pool = active.filter((f) => !avoid.has(f));
     if (!pool.length) pool = active;
-    const n = randInt(CONFIG.boardSlices[0], CONFIG.boardSlices[1]);
-    const k = Math.min(pool.length, rand() < CONFIG.boardMixChance ? 2 : 1);
-    const p = makePlate(distribute(n, shuffle(pool).slice(0, k)));
+    const unseen = pool.filter((f) => B[f] === 0);
+    const n = randInt(def.boardSlices[0], def.boardSlices[1]);
+    const k = Math.min(pool.length, n, rand() < def.mix ? randInt(2, def.mixKinds) : 1);
+    const first = unseen.length ? [pick(unseen)] : [];
+    const flavors = [...first, ...shuffle(pool.filter((f) => !first.includes(f)))].slice(0, k);
+    const p = makePlate(distribute(n, flavors));
     p.pop = 0;
     this.board[idx] = p;
-    if (p.slices.some((f) => avoid.has(f))) this.dirty.push(idx);
+    if (p.slices.some((s) => avoid.has(s.f))) this.dirty.push(idx);
     return idx;
   }
 
   /**
    * 컨베이어 접시는 지금 테이블에 있는 맛으로만 만든다.
-   * 맛마다 (테이블 + 컨베이어) 조각 수가 6의 배수가 되도록 모자란 만큼을 우선 채워서,
-   * 잘 놓기만 하면 테이블을 완전히 비울 수 있게 한다.
+   * 맛마다 (테이블 + 컨베이어) 조각 수가 6의 배수가 되도록 모자란 만큼을 우선 채우고,
+   * 모자란 게 없으면 테이블에 많은 맛으로 케이크 하나 분량(6조각)을 새로 연다.
+   * 단, 단계별 help 확률만큼만 이렇게 챙겨 주고 나머지는 테이블의 아무 맛이나 나온다.
    */
   private makeConveyorSlices(): number[] {
+    const def = this.def;
     const B = this.boardCounts();
     const C = FLAVORS.map(() => 0);
-    for (const p of this.conveyor) if (p) for (const f of p.slices) C[f]++;
-    const onBoard = range(FLAVORS.length).filter((f) => B[f] > 0);
-    if (!onBoard.length) return [];
+    for (const p of this.conveyor) if (p) for (const s of p.slices) C[s.f]++;
+    let onBoard = range(FLAVORS.length).filter((f) => B[f] > 0);
+    // 테이블이 잠깐 비었으면 이 단계의 맛 중에서
+    if (!onBoard.length) onBoard = range(def.flavors);
     const need = new Map(onBoard.map((f) => [f, (MAX_SLICES - ((B[f] + C[f]) % MAX_SLICES)) % MAX_SLICES]));
-    const size = weighted(CONFIG.conveyorSliceWeights) + 1;
-    const kinds = weighted(CONFIG.conveyorKindWeights) + 1;
+    const size = weighted(def.sizes) + 1;
+    const kinds = weighted(def.kinds) + 1;
     const out: number[] = [];
     const chosen: number[] = [];
     while (out.length < size) {
+      // 단계가 높을수록 모자란 조각 대신 테이블의 아무 맛이나 나온다
+      if (rand() > def.help) {
+        const any = onBoard.filter((f) => chosen.includes(f) || chosen.length < kinds);
+        const f = pick(any);
+        if (!chosen.includes(f)) chosen.push(f);
+        out.push(f);
+        need.set(f, need.get(f)! > 0 ? need.get(f)! - 1 : MAX_SLICES - 1);
+        continue;
+      }
       const pool = onBoard.filter((f) => need.get(f)! > 0 && (chosen.includes(f) || chosen.length < kinds));
       if (!pool.length) {
         if (out.length) break;
-        // 모자란 맛이 없으면 테이블에 많은 맛으로 케이크 하나 분량(6조각)을 새로 연다
-        need.set(weightedPick(onBoard, (f) => B[f]), MAX_SLICES);
+        need.set(weightedPick(onBoard, (f) => B[f] + 1), MAX_SLICES);
         continue;
       }
       const f = weightedPick(pool, (x) => need.get(x)!);

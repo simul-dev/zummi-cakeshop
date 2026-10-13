@@ -21,14 +21,20 @@
 
     <header id="hud">
       <div class="pill">
-        <span class="lbl">남은 케이크</span>
-        <span id="left">0</span>
+        <span class="lbl">단계</span>
+        <span id="stage">1/5</span>
       </div>
       <div class="score">
         <span class="lbl">점수</span>
         <span id="score">0</span>
       </div>
-      <button id="sound" class="round" type="button" aria-label="소리 켜기/끄기">🔊</button>
+      <div class="right">
+        <div class="pill">
+          <span class="lbl">남은 케이크</span>
+          <span id="left">0</span>
+        </div>
+        <button id="sound" class="round" type="button" aria-label="소리 켜기/끄기">🔊</button>
+      </div>
     </header>
 
     <div id="overlay" hidden>

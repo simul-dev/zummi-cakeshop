@@ -1,4 +1,4 @@
-import { drawCake, drawLooseSlice, drawPlate, TILT } from './cake';
+import { angleDiff, drawCake, drawMovingSlice, drawPlate, TILT } from './cake';
 import { CONVEYOR_SLOTS, ROWS, COLS, SLOTS } from './config';
 import { circle, easeInOut, easeOutBack, easeOutCubic, roundRect, TAU } from './draw';
 import type { Game, Plate } from './game';
@@ -131,14 +131,17 @@ export function renderFrame(ctx: Ctx, L: Layout, g: Game, bg: HTMLCanvasElement,
     plateAt(ctx, p, x, y, s, p.lift * 0.6);
   }
 
-  // 날아가는 조각
+  // 접시 사이를 직선으로 미끄러지는 조각: 출발 자리에서 도착 접시의 제자리까지, 각도도 같이 맞춰 간다
   for (const f of g.flyers) {
     const t = Math.min(1, f.t / f.dur);
     const e = easeInOut(t);
-    const a = slotCenter(L, f.from);
+    const dst = g.board[f.to];
     const b = slotCenter(L, f.to);
-    const arc = Math.sin(Math.PI * t);
-    drawLooseSlice(ctx, a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e - arc * 34 - 6, 1, f.flavor, arc);
+    const x1 = b.x + (dst?.ox ?? 0);
+    const y1 = b.y + (dst?.oy ?? 0);
+    const a1 = f.slice.ang;
+    const ang = f.a0 + angleDiff(a1, f.a0) * e;
+    drawMovingSlice(ctx, f.x0 + (x1 - f.x0) * e, f.y0 + (y1 - f.y0) * e, 1, f.flavor, ang);
   }
 
   // 들고 있는 접시

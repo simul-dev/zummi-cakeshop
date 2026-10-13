@@ -1,4 +1,5 @@
 import { sfx } from './audio';
+import { STAGES } from './config';
 import type { Game } from './game';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -7,6 +8,7 @@ const fmt = (n: number) => n.toLocaleString('ko-KR');
 export function bindHud(game: Game) {
   const scoreEl = $('score');
   const leftEl = $('left');
+  const stageEl = $('stage');
   const soundBtn = $<HTMLButtonElement>('sound');
   const overlay = $('overlay');
   const title = $('endTitle');
@@ -26,6 +28,7 @@ export function bindHud(game: Game) {
 
   game.onScore = (score, gained) => {
     scoreEl.textContent = fmt(score);
+    stageEl.textContent = `${game.stage}/${STAGES.length}`;
     if (gained > 0) {
       scoreEl.classList.remove('bump');
       void scoreEl.offsetWidth; // 애니메이션 재시작
@@ -35,15 +38,20 @@ export function bindHud(game: Game) {
 
   game.onEnd = (kind, isNewBest) => {
     const clear = kind === 'clear';
-    title.textContent = clear ? `${game.stage}단계 클리어!` : '테이블이 꽉 찼어요!';
-    sub.textContent = clear ? '케이크를 전부 완성했어요' : `${game.stage}단계에서 멈췄어요`;
+    const all = kind === 'allclear';
+    title.textContent = all
+      ? '모든 단계 클리어! 🎉'
+      : clear ? `${game.stage}단계 클리어!` : '테이블이 꽉 찼어요!';
+    sub.textContent = all
+      ? '케이크샵의 케이크를 전부 완성했어요'
+      : clear ? `다음은 ${game.stage + 1}단계예요` : `${game.stage}단계 · 케이크 ${game.remainingCakes()}개를 못 만들었어요`;
     finalScore.textContent = fmt(game.score);
     finalBest.textContent = fmt(game.best);
     newBest.hidden = !isNewBest;
     nextBtn.hidden = !clear;
-    restartBtn.textContent = clear ? '처음부터' : '다시 하기';
+    restartBtn.textContent = clear ? '처음부터' : all ? '한 번 더' : '다시 하기';
     restartBtn.classList.toggle('secondary', clear);
-    overlay.classList.toggle('clear', clear);
+    overlay.classList.toggle('clear', clear || all);
     overlay.hidden = false;
   };
 

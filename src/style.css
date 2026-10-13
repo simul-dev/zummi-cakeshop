@@ -65,7 +65,7 @@ canvas {
 
 .pill {
   justify-self: start;
-  min-width: 64px;
+  min-width: 58px;
   padding: 6px 14px 5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.88);
@@ -78,7 +78,14 @@ canvas {
 }
 
 .lbl { font-size: 12px; opacity: 0.75; }
-#left { font-size: 21px; }
+#left, #stage { font-size: 21px; }
+
+.right {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .score {
   display: flex;
@@ -110,7 +117,6 @@ canvas {
 }
 
 .round {
-  justify-self: end;
   pointer-events: auto;
   width: 44px;
   height: 44px;

@@ -5,6 +5,7 @@ interface ToneOpts { type?: OscillatorType; vol?: number; to?: number; delay?: n
 class Sfx {
   muted = false;
   private ac: AudioContext | null = null;
+  private noiseBuf: AudioBuffer | null = null;
 
   constructor() {
     try { this.muted = localStorage.getItem('zummi.muted') === '1'; } catch { /* 저장소 없음 */ }
@@ -39,15 +40,47 @@ class Sfx {
     o.stop(t0 + dur + 0.03);
   }
 
+  /** 짧은 잡음을 밴드패스로 걸러 낸 '스윽' 소리 */
+  private swish(dur: number, fromHz: number, toHz: number, vol: number, delay = 0) {
+    if (this.muted || !this.ac) return;
+    const ac = this.ac;
+    if (!this.noiseBuf) {
+      this.noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const t0 = ac.currentTime + delay;
+    const src = ac.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(fromHz, t0);
+    bp.frequency.exponentialRampToValueAtTime(toHz, t0 + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp).connect(g).connect(ac.destination);
+    src.start(t0);
+    src.stop(t0 + dur + 0.02);
+  }
+
   pick() { this.tone(520, 0.08, { type: 'triangle', to: 780, vol: 0.1 }); }
   place() {
     this.tone(240, 0.12, { to: 130, vol: 0.25 });
     this.tone(1100, 0.04, { type: 'triangle', vol: 0.05 });
   }
   cancel() { this.tone(330, 0.09, { type: 'triangle', to: 220, vol: 0.08 }); }
-  slice(i: number) {
-    const f = 600 * Math.pow(2, (i % 8) / 12);
-    this.tone(f, 0.07, { type: 'triangle', to: f * 1.3, vol: 0.08 });
+  /** 조각이 접시 위를 미끄러져 갈 때 */
+  slide(k: number) {
+    this.swish(0.26, 700 + k * 60, 1900, 0.09);
+  }
+  /** 조각이 제자리에 자리 잡을 때: 부드러운 '톡' */
+  settle() {
+    this.tone(190, 0.08, { to: 120, vol: 0.14 });
+    this.tone(2600, 0.025, { type: 'triangle', vol: 0.035 });
   }
   complete(combo: number) {
     const root = 523.25 * Math.pow(2, (Math.min(combo - 1, 6) * 2) / 12);
